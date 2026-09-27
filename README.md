@@ -1,4 +1,4 @@
-# HomePod (1st gen) replacement mesh (2nd Gen coming soon!)
+# HomePod (1st gen) replacement mesh
 
 A parametric generator for printable replacement acoustic mesh for the Apple HomePod
 (1st generation). It writes STL and 3MF for a seamless diamond-lattice shell, in either a
@@ -8,17 +8,10 @@ like a sock.
 Everything is driven from caliper measurements of a real pod, so the same script produces a
 part that fits whether the original mesh is still on the speaker or has been stripped off.
 
-
-To get you started, here are the commands I run to generate two versions; One single-piece tall version that slides over the original mesh...and a two-piece split version that you glue together.
-
-Split;
 ```
-python3 homepod_shell.py --arcs --max-flare 85 --flare-blend 1.5 --pitch 2.4 --rib 0.72 --dmax 141.3 --split 30 --stretch 1 --fit 1.0 --gap 0.4 --slide --thick 2.0 --hem 0 --hem-bottom 0 --top-ring 2 --bottom-ring 2 --bottom-ring-proud 0.4 --bottom-ring-part --cap-trim --cord 15 --cord-z 30 --variants -o ModelFolder
-```
-
-One Piece;
-```
-python3 homepod_shell.py --arcs --max-flare 75 --flare-blend 1.5 --pitch 2.4 --rib 0.72 --dmax 141.3 --straight-bottom 28 --fit 1.0 --gap 0.4 --slide --thick 2.0 --hem 0 --hem-bottom 0 --top-ring 2 --cap-trim --stretch 1 --variants --cord 6 --cord-z 30 --cord-slot --cord-border 2.0 -o ModelFolder
+python3 homepod_shell.py --arcs --max-flare 85 --pitch 2.4 --rib 0.72 --dmax 141.3 \
+  --split 28 --stretch 2 --fit 1.0 --gap 0.4 --slide --thick 2.0 \
+  --hem 0 --hem-bottom 0 --cap-trim --cord 15 --cord-z 28 -o out
 ```
 
 ---
@@ -48,7 +41,7 @@ anywhere** in the pattern — no start, no stop, no join line.
 | --- | --- | --- |
 | **Rigid, two pieces** | lower half from below, upper half from above, interlocking rebate | `--split 28 --slide --gap 0.4` |
 | **Rigid, one piece** | slides down over the whole pod | `--slide --gap 0.4 --cord-slot` |
-| **TPU sock** | stretches on | `--fit 0.95` (no `--slide`, no `--gap`) |
+| **TPU sock** | stretches on | `--fit 0.95 --gap -0.6` (no `--slide`) |
 | **Test band** | a short ring for dialling in settings | `--band 60 80` |
 
 Four mesh densities are built in (`--variants`), or set `--pitch` and `--rib` yourself:
@@ -134,12 +127,13 @@ cord that is still plugged in.
 
 ```
 python3 homepod_shell.py --arcs --pitch 2.4 --rib 0.72 --thick 1.2 \
-  --dmax 136.6 --fit 0.95 --max-flare 65 --flare-blend 1.5 \
+  --dmax 136.6 --fit 0.95 --gap -0.6 --max-flare 65 --flare-blend 1.5 \
   --hem 0 --hem-bottom 4 --hem-thick 2 --cap-trim -o out
 ```
 
-No `--slide`, no `--gap`, no `--split` — it hugs the profile and stretches about 4 % onto the
-bare chassis. The bottom cuff stops a bare lattice edge curling off the bed.
+No `--slide`, no `--split` — it hugs the profile and stretches about 4 % onto the bare
+chassis. The negative `--gap` is the interference: it pulls the wall 0.6 mm in past the
+chassis so the sock has to stretch over it. The bottom cuff stops a bare lattice edge curling off the bed.
 
 ### Test band
 
@@ -303,10 +297,16 @@ only widens. Its top swells over 4 mm to meet the upper piece's widened bore.
 
 ### Fit
 
+**`--gap` is clearance only.** Half the wall thickness is geometry — the mid-surface has to
+sit half a wall outside the bore whatever the clearance — so it is always added. `--gap 0.4`
+puts the mid-surface 1.4 mm out on a 2 mm wall; `--gap 0` puts the inner face exactly on the
+measured profile (zero clearance, still fits); `--gap -0.6` pulls it 0.6 mm inside, which is
+what a stretch-on sock wants.
+
 | flag | default | meaning |
 | --- | --- | --- |
 | `--fit` | 0.95 | radial scale; < 1 for a stretch fit, 1.0 for rigid |
-| `--gap` | 0 | clearance on the bore, for a rigid shell |
+| `--gap` | 0 | clearance on the bore, mm. Half the wall is always added on top, so 0 = inner face on the profile; negative = interference fit |
 | `--slide` | off | widen the bore to the running maximum so a rigid shell can pass the belly |
 | `--layer` | 0.2 | layer height, for the printability checks |
 | `--max-flare` | from wall/layer | cap the bottom roll angle off vertical |

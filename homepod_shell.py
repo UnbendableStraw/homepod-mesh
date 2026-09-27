@@ -421,7 +421,7 @@ def main():
     ap.add_argument('--layer', type=float, default=0.2, help='layer height, for the printability check')
     ap.add_argument('--no-union', action='store_true', help='leave the ribs as separate bodies')
     ap.add_argument('--variants', action='store_true', help='write fine / medium / coarse in one go (pitch and rib only; --thick applies to all)')
-    ap.add_argument('--gap', type=float, default=0.0, help='radial clearance on the bore - for a rigid shell that slides on')
+    ap.add_argument('--gap', type=float, default=0.0, help='radial clearance on the bore, mm - for a rigid shell that slides on. Half the wall thickness is always added on top, so 0 puts the inner face exactly on the measured profile; go negative for an interference fit')
     ap.add_argument('--straight-bottom', type=float, metavar='Z', help='drop the bottom roll: hold the diameter from this height straight down to the bench')
     ap.add_argument('--collar', type=float, default=0.0, help='straight ring above the shell top, to meet the underside of the cap')
     ap.add_argument('--split', type=float, metavar='Z', help='cut into two pieces at this height with an interlocking rebate')
@@ -469,8 +469,10 @@ def main():
                 gauge(Profile(pts, 1.0, max_flare=flare, blend=a.flare_blend), os.path.join(a.out, 'homepod_profile_gauge.stl'))
                 print(f'wrote {a.out}/homepod_profile_gauge.stl\n')
         if a.band: pts = Profile(pts, 1.0, max_flare=flare, blend=a.flare_blend).slice_z(*a.band)
-        # --gap is clearance on the BORE, so the mid-surface sits half a wall further out
-        off = (a.gap + a.thick / 2) if a.gap > 0 else 0.0
+        # --gap is clearance on the BORE. Half the wall is geometry, not clearance, so it is
+        # ALWAYS added: --gap 0 puts the inner face exactly on the measured profile, and a
+        # negative gap gives an interference fit (what a stretch-on TPU sock wants).
+        off = a.gap + a.thick / 2
         prof = Profile(pts, a.fit, max_flare=flare, gap=off, slide=a.slide, blend=a.flare_blend)
         if a.cap_trim and not a.no_cap_trim:
             prof.trim_to((a.cap_dia + a.cap_gap) / 2, a.thick / 2)
