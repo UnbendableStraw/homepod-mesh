@@ -9,10 +9,16 @@ like a sock.
 Everything is driven from caliper measurements of a real pod, so the same script produces a
 part that fits whether the original mesh is still on the speaker or has been stripped off.
 
+To get you started, here are the commands I run to generate two versions; One single-piece tall version that slides over the original mesh...and a two-piece split version that you glue together.
+
+Split;
 ```
-python3 homepod_shell.py --arcs --max-flare 85 --pitch 2.4 --rib 0.72 --dmax 141.3 \
-  --split 28 --stretch 2 --fit 1.0 --gap 0.4 --slide --thick 2.0 \
-  --hem 0 --hem-bottom 0 --top-ring 0 --cap-trim --cord 15 --cord-z 28 -o out
+python3 homepod_shell.py --arcs --max-flare 85 --flare-blend 1.5 --pitch 2.4 --rib 0.72 --dmax 141.3 --split 30 --stretch 1 --fit 1.0 --gap 0.4 --slide --thick 2.0 --hem 0 --hem-bottom 0 --top-ring 2 --bottom-ring 2 --bottom-ring-proud 0.4 --bottom-ring-part --cap-trim --cord 15 --cord-z 30 --variants -o ModelFolder
+```
+
+One Piece;
+```
+python3 homepod_shell.py --arcs --max-flare 75 --flare-blend 1.5 --pitch 2.4 --rib 0.72 --dmax 141.3 --straight-bottom 28 --fit 1.0 --gap 0.4 --slide --thick 2.0 --hem 0 --hem-bottom 0 --top-ring 2 --cap-trim --stretch 1 --variants --cord 6 --cord-z 30 --cord-slot --cord-border 2.0 -o ModelFolder
 ```
 
 ---
