@@ -239,7 +239,7 @@ def band_at(r, z, nr, nz, thick, nθ=480):
         F.append(np.c_[i * nu + a, j * nu + b, j * nu + a])
     return trimesh.Trimesh(V, np.vstack(F), process=False)
 
-def cord_cut(mesh, dia, z0, slot=False, border=0.0, prof=None, thick=2.0):
+def cord_cut(mesh, dia, z0, slot=False, border=0.0, prof=None, thick=2.0, wall_s=None):
     """Notch for the power cord: a hole of diameter dia through the wall at height z0, on the
     +X side only. slot=True opens it straight down past the bottom of the part so the shell can
     be slid on over a plugged-in cord. border>0 frames the opening with a solid band of that
@@ -262,7 +262,12 @@ def cord_cut(mesh, dia, z0, slot=False, border=0.0, prof=None, thick=2.0):
     out = trimesh.boolean.difference([mesh, small], engine='manifold')
     if border > 0 and prof is not None:
         ring = trimesh.boolean.difference([cutter(dia + 2 * border), small], engine='manifold')
-        wall = band(prof, 0.0, prof.S, thick)         # the full solid shell, to keep the frame
+        # The frame is a full-wall band, so it must be confined to the stretch of shell that is
+        # actually full wall. On a split half the joint is a HALF-wall tongue or socket, and a
+        # frame run through it fills the rebate solid - the halves then will not close. wall_s
+        # is the lattice's own arc range, which is exactly the full-wall part.
+        s0, s1 = wall_s if wall_s else (0.0, prof.S)
+        wall = band(prof, max(0.0, s0), min(prof.S, s1), thick)
         frame = trimesh.boolean.intersection([ring, wall], engine='manifold')   # on the surface
         out = trimesh.boolean.union([out, frame], engine='manifold')
     return out
@@ -305,6 +310,23 @@ def joint(prof, z_cut, L, thick, gap, outer):
     r, z, nr, nz = prof.at(v)
     return band_at(r + shift * nr, z + shift * nz, nr, nz, t)
 
+def seam_trim(mesh, keep, z0, z1, keep_below):
+    """Square the rebate off on true planes.
+
+    Every band is swept along the surface NORMAL, so its end faces are slanted and overhang
+    the split plane by a couple of tenths - a full-wall ring sitting proud of a half-wall
+    tongue. That is interference: the halves bottom out on it before they close. Outside the
+    joint the piece is untouched; inside it, whatever survives is clipped to the tongue (or
+    socket) envelope, so the cord hole and anything else already cut stays cut."""
+    b = mesh.bounds; pad = 10.0
+    def slab(a, c):
+        return trimesh.creation.box(bounds=[[b[0][0] - pad, b[0][1] - pad, a],
+                                            [b[1][0] + pad, b[1][1] + pad, c]])
+    outside = slab(b[0][2] - pad, z0) if keep_below else slab(z1, b[1][2] + pad)
+    body = trimesh.boolean.intersection([mesh, outside], engine='manifold')
+    j = trimesh.boolean.intersection([mesh, keep, slab(z0, z1)], engine='manifold')
+    return trimesh.boolean.union([body, j], engine='manifold')
+
 def report(prof, m, ang, args, vol, faces, wt):
     open_f = max(0.0, (1 - args.rib / args.pitch)) ** 2
     dz, dr = np.diff(prof.z), np.diff(prof.r)
@@ -324,7 +346,7 @@ def report(prof, m, ang, args, vol, faces, wt):
           f'({"self-supporting" if creep < args.thick * 0.5 else "NEEDS SUPPORT"}); '
           f'shoulder leans in at {dn:.0f} deg, free')
 
-def build(args, prof, tag, extra=None, rib_range=None):
+def build(args, prof, tag, extra=None, rib_range=None, seam=None):
     parts, m, ang = ribs(prof, args.pitch, args.rib, args.thick, args.angle, rib_range=rib_range)
     ht = args.hem_thick or args.thick
     hb = args.hem_bottom if args.hem_bottom is not None else args.hem
@@ -371,9 +393,16 @@ def build(args, prof, tag, extra=None, rib_range=None):
         try:
             mesh = cord_cut(mesh, args.cord, args.cord_z,
                             args.cord_slot and mesh.bounds[0][2] < args.cord_z - args.cord / 2,
-                            border=args.cord_border, prof=prof, thick=args.thick)
+                            border=args.cord_border, prof=prof, thick=args.thick,
+                            wall_s=rib_range)
         except Exception as e:
             print(f'  (cord cut skipped: {type(e).__name__}: {e})')
+    if seam is not None:
+        try:
+            keep, z0, z1, keep_below = seam
+            mesh = seam_trim(mesh, keep, z0, z1, keep_below)
+        except Exception as e:
+            print(f'  (seam trim skipped: {type(e).__name__}: {e})')
     if args.top_z is not None:
         # the wall is built along the normal, which near the cap points almost straight up, so
         # the shell would stand proud of the pod's top surface. Cut it off flush there.
@@ -493,16 +522,19 @@ def main():
             a.hem, a.hem_bottom = 0.0, (a.hem_bottom if a.hem_bottom is not None else 4.0)
             tz, bb = a.top_z, a.bottom_border
             a.top_z, a.bottom_border = None, 0.0   # the border is a one-piece feature
-            build(a, lo, f'{tag}_lower', extra=[joint(prof, zc, L, a.thick, a.joint_gap, outer=False),
-                                                band(prof, max(0, sc - 3), sc, a.thick)],
-                  rib_range=(0.0, float(np.interp(zc, lo.z, lo.s))))
+            tongue = joint(prof, zc, L, a.thick, a.joint_gap, outer=False)
+            build(a, lo, f'{tag}_lower', extra=[tongue, band(prof, max(0, sc - 3), sc, a.thick)],
+                  rib_range=(0.0, float(np.interp(zc, lo.z, lo.s))),
+                  seam=(tongue, zc, zc + L, True))
             a.top_z = tz
             up = Profile(prof.slice_z(zc, prof.z.max()), 1.0, slide=a.slide)
             if a.cap_trim and not a.no_cap_trim:
                 up.trim_to((a.cap_dia + a.cap_gap) / 2, a.thick / 2)
             a.hem, a.hem_bottom = hem0, 0.0
-            build(a, up, f'{tag}_upper', extra=[joint(prof, zc, L, a.thick, a.joint_gap, outer=True)],
-                  rib_range=(float(np.interp(zc + L, up.z, up.s)), up.S))
+            socket = joint(prof, zc, L, a.thick, a.joint_gap, outer=True)
+            build(a, up, f'{tag}_upper', extra=[socket],
+                  rib_range=(float(np.interp(zc + L, up.z, up.s)), up.S),
+                  seam=(socket, zc, zc + L, False))
             a.hem, a.hem_bottom, a.bottom_border = hem0, hem, bb
         print()
 
