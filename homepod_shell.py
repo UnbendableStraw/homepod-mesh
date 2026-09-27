@@ -216,22 +216,6 @@ def ribs(prof, pitch, rib, thick, ang, step_mm=2.0, rib_range=None):
             out.append(tube(P, N, B, rib, thick))
     return out, m, ang
 
-def flange(ri, ro, z0, z1, nθ=480):
-    """flat annular washer: the top cap ring. ri hugs the plastic top cap, ro meets the
-    outside of the lattice, and the top face is flush - nothing stands above z1."""
-    th = np.linspace(0, 2 * math.pi, nθ, endpoint=False)
-    c, sn = np.cos(th), np.sin(th)
-    loop = [(ri, z0), (ro, z0), (ro, z1), (ri, z1)]        # cross-section, CCW in (r, z)
-    grid = np.stack([np.stack([r * c, r * sn, np.full(nθ, z)], -1) for r, z in loop], 0)
-    nv, nu = grid.shape[:2]
-    V = grid.reshape(-1, 3); F = []
-    for i in range(nv):
-        j = (i + 1) % nv
-        a = np.arange(nu); b = (a + 1) % nu
-        F.append(np.c_[i * nu + a, i * nu + b, j * nu + b])
-        F.append(np.c_[i * nu + a, j * nu + b, j * nu + a])
-    return trimesh.Trimesh(V, np.vstack(F), process=False)
-
 def band(prof, s0, s1, thick, nθ=480):
     """solid ring of revolution between two arc-length stations: the cuff"""
     v = np.linspace(s0, s1, max(2, int((s1 - s0) / 0.8) + 1))
@@ -306,14 +290,6 @@ def stretch(pts, mm, at=80.0):
     roll and the top shoulder keep their exact curvature - unlike scaling, which bends both"""
     return [(float(z + mm) if z > at else float(z), float(d)) for z, d in pts]
 
-def top_ring(pts, h):
-    """make the last h mm of the shell a straight vertical ring, so a flat cut across the top
-    exposes exactly the wall thickness instead of a wide slice through the sloping shoulder"""
-    z = np.array([a for a, b in pts]); d = np.array([b for a, b in pts])
-    zt = float(z[-1]); zv = zt - h; dv = float(np.interp(zv, z, d))
-    k = z < zv
-    return [(float(a), float(b)) for a, b in zip(z[k], d[k])] + [(zv, dv), (zt, dv)]
-
 def collar(pts, h):
     """straight ring above the shell top, to meet the underside of the cap"""
     z = np.array([a for a, b in pts])
@@ -349,43 +325,29 @@ def report(prof, m, ang, args, vol, faces, wt):
           f'shoulder leans in at {dn:.0f} deg, free')
 
 def build(args, prof, tag, extra=None, rib_range=None):
-    ring_s = None; sep_ring = None
-    if args.top_ring:
-        # the profile has already been trimmed so the bore ends on the plastic cap; the rim
-        # is just the last few mm of that surface made solid. --top-ring is its WIDTH.
-        ring_s = max(0.0, prof.S - args.top_ring)
-        if args.top_ring_align == 'inner':
-            a0 = rib_range[0] if rib_range else 0.0
-            rib_range = (a0, min(rib_range[1] if rib_range else prof.S, ring_s))
-        # 'outer': the ribs keep running to the very top and pass UNDER the ring, so the ring
-        # reads flush with the mesh from outside and the lattice shows through from below.
     parts, m, ang = ribs(prof, args.pitch, args.rib, args.thick, args.angle, rib_range=rib_range)
     ht = args.hem_thick or args.thick
     hb = args.hem_bottom if args.hem_bottom is not None else args.hem
-    if args.bottom_ring > 0:
-        # mirror of the top ring: a narrow solid rim at the base. The ribs are never clipped at
-        # the bottom, so with 'outer' alignment the lattice runs on underneath it and shows
-        # through from inside, while the outside stays flush with the mesh surface.
-        bt = args.bottom_ring_thick
-        v = np.linspace(0.0, args.bottom_ring, max(2, int(args.bottom_ring / 0.4) + 1))
-        r, z, nr, nz = prof.at(v)
-        sh = (args.thick - bt) / 2 * (1 if args.bottom_ring_align == 'outer' else -1)
-        sh += args.bottom_ring_proud      # push it out past the mesh for a grip foot
-        bring = band_at(r + sh * nr, z + sh * nz, nr, nz, bt)
-        if args.bottom_ring_part: sep_ring = bring     # keep it out of the union, own file
-        else: parts.append(bring)
-    elif hb > 0:
-        parts.append(band(prof, 0, hb, ht))                 # bottom cuff: also covers the steep roll
-    if ring_s is not None or args.hem > 0:
-        tt = args.top_ring_thick if ring_s is not None else (args.hem_thick_top or ht)
-        s0 = ring_s if ring_s is not None else prof.S - args.hem
+    if hb > 0: parts.append(band(prof, 0, hb, ht))          # bottom cuff: also covers the steep roll
+    z_flat = None
+    if args.bottom_border > 0:
+        # A solid border at the base: the first --bottom-border mm of arc made solid at full
+        # wall thickness, taken OUT of the lattice rather than added below it. The cord slot is
+        # cut afterwards and goes straight through, so the shell still slides on over a
+        # plugged-in cord.
+        bb = band(prof, 0, args.bottom_border, args.thick)
+        parts.append(bb)
+        # The swept rib tubes are capped square to the helix, not to the rim, so their ends
+        # hang a few tenths BELOW the band - a ragged fringe under an otherwise solid border,
+        # and a first layer of hundreds of unsupported islands. Cut the whole part off at the
+        # band's own underside so the base is one flat annulus.
+        z_flat = float(bb.bounds[0][2])
+    if args.hem > 0:
+        tt = args.hem_thick_top or ht
+        s0 = prof.S - args.hem
         v = np.linspace(s0, prof.S, max(2, int((prof.S - s0) / 0.4) + 1))
         r, z, nr, nz = prof.at(v)
-        # which face of the wall the thinner band lines up with. 'inner' keeps the bore flush and
-        # leaves the band standing proud outside; 'outer' keeps the OUTSIDE flush, so the band
-        # disappears into the mesh surface and the ribs are visible under it.
-        out = ring_s is not None and args.top_ring_align == 'outer'
-        sh = (args.thick - tt) / 2 * (1 if out else -1)
+        sh = -(args.thick - tt) / 2
         parts.append(band_at(r + sh * nr, z + sh * nz, nr, nz, tt))
     if extra: parts += extra
     mesh = trimesh.util.concatenate(parts)
@@ -395,6 +357,16 @@ def build(args, prof, tag, extra=None, rib_range=None):
             u = trimesh.boolean.union(parts, engine='manifold'); mesh = u; wt = str(u.is_watertight)
         except Exception as e:
             print(f'  (union skipped: {type(e).__name__}: {e})')
+    if z_flat is not None and not args.no_bottom_flat:
+        try:
+            lost = z_flat - float(mesh.bounds[0][2])
+            b = mesh.bounds
+            box = trimesh.creation.box(bounds=[[b[0][0] - 10, b[0][1] - 10, z_flat],
+                                               [b[1][0] + 10, b[1][1] + 10, b[1][2] + 10]])
+            mesh = trimesh.boolean.intersection([mesh, box], engine='manifold')
+            print(f'  base cut flat on the border underside: {lost:.3f} mm of ragged rib ends removed')
+        except Exception as e:
+            print(f'  (base flatten skipped: {type(e).__name__}: {e})')
     if args.cord:
         try:
             mesh = cord_cut(mesh, args.cord, args.cord_z,
@@ -417,47 +389,11 @@ def build(args, prof, tag, extra=None, rib_range=None):
             except Exception as e2: print(f'  (top cut skipped: {type(e).__name__} / {type(e2).__name__})')
     os.makedirs(args.out, exist_ok=True)
     p = os.path.join(args.out, f'homepod_{tag}.stl'); mesh.export(p)
-    if sep_ring is not None:                 # the grip foot as its own body, for a second filament
-        q = os.path.join(args.out, f'homepod_{tag}_ring.stl'); sep_ring.export(q)
-        print(f'  -> {q}  (grip ring, {sep_ring.volume/1000:.2f} cm3, load as a part and give it its own filament)')
     try:
         sc = trimesh.Scene(); sc.add_geometry(mesh, geom_name=tag)
-        if sep_ring is not None:            # second body in the same 3mf, so Orca loads it in place
-            sc.add_geometry(sep_ring, geom_name=f'{tag}_ring')
-        t = p.replace('.stl', '.3mf')
-        sc.export(t)                                               # a third the size, and Orca prefers it
-        if sep_ring is not None: merge_3mf_parts(t)                # one object, two parts - see above
+        sc.export(p.replace('.stl', '.3mf'))                       # a third the size, and Orca prefers it
     except Exception as e: print(f'  (3mf skipped: {type(e).__name__})')
     print(f'{tag}:'); report(prof, m, ang, args, mesh.volume, len(mesh.faces), wt); print(f'  -> {p}')
-
-def merge_3mf_parts(path):
-    """Rewrite a trimesh-written 3mf so its separate objects become PARTS of one
-    object.  trimesh emits one <build><item> per geometry, which Orca loads as two
-    independent objects and drops to the bed independently - the proud grip ring
-    sits lower than the shell, so that shifts it out of place.  One object with
-    two components keeps them locked together and still lets you give each part
-    its own filament."""
-    import zipfile, re, uuid
-    with zipfile.ZipFile(path) as zin:
-        names = zin.namelist()
-        xml = zin.read('3D/3dmodel.model').decode('utf-8')
-        rest = [(n, zin.read(n)) for n in names if n != '3D/3dmodel.model']
-    ids = list(dict.fromkeys(re.findall(r'<item\b[^>]*?objectid="(\d+)"', xml)))
-    if len(ids) < 2:
-        return
-    new = str(max(int(i) for i in ids) + 1)
-    obj = ('<object id="%s" type="model" p:UUID="%s"><components>%s</components></object>'
-           % (new, uuid.uuid4(),
-              ''.join('<component objectid="%s" p:UUID="%s"/>' % (i, uuid.uuid4()) for i in ids)))
-    xml = xml.replace('</resources>', obj + '</resources>')
-    build = ('<build p:UUID="%s"><item objectid="%s" p:UUID="%s" '
-             'transform="1 0 0 0 1 0 0 0 1 0 0 0"/></build>'
-             % (uuid.uuid4(), new, uuid.uuid4()))
-    xml = re.sub(r'<build\b.*?</build>', lambda m: build, xml, flags=re.S)
-    with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as zo:
-        for n, d in rest:
-            zo.writestr(n, d)
-        zo.writestr('3D/3dmodel.model', xml.encode('utf-8'))
 
 def main():
     ap = argparse.ArgumentParser()
@@ -492,23 +428,15 @@ def main():
     ap.add_argument('--joint', type=float, default=4.0, help='rebate overlap length, mm')
     ap.add_argument('--slide', action='store_true', help='rigid shell: widen the bore to the running max so it can slide on from the top')
     ap.add_argument('--hem-thick-top', type=float, help='top band wall, mm (default: --hem-thick)')
-    ap.add_argument('--top-ring', type=float, default=0.0, help='width of the solid rim at the top, mm - the shell is trimmed so its bore lands on the plastic cap')
-    ap.add_argument('--top-ring-thick', type=float, default=1.0, help='wall of the top ring, mm (how tall it stands)')
-    ap.add_argument('--bottom-ring', type=float, default=0.0, help='width of a solid rim at the base, mm of arc (0 = none; supersedes --hem-bottom)')
-    ap.add_argument('--bottom-ring-thick', type=float, default=1.0, help='wall of the bottom ring, mm')
-    ap.add_argument('--bottom-ring-align', choices=('inner', 'outer'), default='outer', help='which face of the wall the bottom ring lines up with')
-    ap.add_argument('--bottom-ring-proud', type=float, default=0.0, help='how far the bottom ring stands out past the mesh surface, mm - a grip foot, e.g. printed in TPU')
-    ap.add_argument('--bottom-ring-part', action='store_true', help='write the bottom ring as a separate STL instead of fusing it in, so it can be given its own filament')
-    ap.add_argument('--top-ring-align', choices=('inner', 'outer'), default='outer',
-                    help="which face of the wall the top ring lines up with. 'outer' makes it flush "
-                         "with the mesh surface and lets the ribs run on underneath it")
-    ap.add_argument('--cap-dia', type=float, default=88.5, help='plastic top cap diameter - the top ring bore')
-    ap.add_argument('--cap-gap', type=float, default=0.4, help='clearance on the top ring bore, mm')
+    ap.add_argument('--cap-dia', type=float, default=88.5, help='plastic top cap diameter - the top opening')
+    ap.add_argument('--cap-gap', type=float, default=0.4, help='clearance on the top opening, mm')
+    ap.add_argument('--no-bottom-flat', action='store_true', help='leave the ragged rib ends hanging below the bottom border instead of cutting the base flat')
+    ap.add_argument('--bottom-border', type=float, default=0.0, help='solid border at the base, mm of arc, full wall thickness. Taken out of the existing lattice so the overall height is unchanged; the cord slot still cuts through it. One-piece builds only')
     ap.add_argument('--cord', type=float, default=0.0, help='diameter of a power-cord hole through the wall, mm (0 = none)')
     ap.add_argument('--cord-z', type=float, default=28.5, help='height of the cord hole centre, mm')
     ap.add_argument('--cord-border', type=float, default=2.0, help='width of the solid frame around the cord opening, mm (0 = bare cut rib ends)')
     ap.add_argument('--cord-slot', action='store_true', help='open the cord hole downward to the bottom edge so the shell slides on without unplugging')
-    ap.add_argument('--cap-trim', action='store_true', help='trim the top to the cap bore even with --top-ring 0, so a bare lattice top still ends on the cap')
+    ap.add_argument('--cap-trim', action='store_true', help='trim the top so the bare lattice edge ends on the plastic cap')
     ap.add_argument('--no-cap-trim', action='store_true', help='do not trim the top to the cap diameter')
     ap.add_argument('--top-z', type=float, help='trim the shell flat at this height, flush with the pod top surface')
     ap.add_argument('--stretch', type=float, default=0.0, help='add this much height in the straight midsection, curvature untouched')
@@ -544,7 +472,7 @@ def main():
         # --gap is clearance on the BORE, so the mid-surface sits half a wall further out
         off = (a.gap + a.thick / 2) if a.gap > 0 else 0.0
         prof = Profile(pts, a.fit, max_flare=flare, gap=off, slide=a.slide, blend=a.flare_blend)
-        if (a.top_ring or a.cap_trim) and not a.no_cap_trim:
+        if a.cap_trim and not a.no_cap_trim:
             prof.trim_to((a.cap_dia + a.cap_gap) / 2, a.thick / 2)
 
         if a.split is None:
@@ -552,7 +480,6 @@ def main():
         else:
             zc, L = a.split, a.joint
             sc = float(np.interp(zc, prof.z, prof.s)); hem0, hem = a.hem, a.hem_bottom
-            br = a.bottom_ring
             # the lower piece goes on from below, where the pod only widens, so it stays
             # conformal - but its top must swell to meet the upper's widened bore. Short taper.
             conf = Profile(pts, a.fit, max_flare=flare, gap=off, slide=False, blend=a.flare_blend)
@@ -562,19 +489,19 @@ def main():
             lp[:, 1] = 2 * np.maximum(lp[:, 1] / 2, ramp)      # only the top 4 mm, nothing below
             lo = Profile([(float(x), float(y)) for x, y in lp], 1.0)            # lower: roll + tongue
             a.hem, a.hem_bottom = 0.0, (a.hem_bottom if a.hem_bottom is not None else 4.0)
-            tr, tz = a.top_ring, a.top_z
-            a.top_ring, a.top_z = 0.0, None       # the cap ring belongs to the upper piece only
+            tz, bb = a.top_z, a.bottom_border
+            a.top_z, a.bottom_border = None, 0.0   # the border is a one-piece feature
             build(a, lo, f'{tag}_lower', extra=[joint(prof, zc, L, a.thick, a.joint_gap, outer=False),
                                                 band(prof, max(0, sc - 3), sc, a.thick)],
                   rib_range=(0.0, float(np.interp(zc, lo.z, lo.s))))
-            a.top_ring, a.top_z = tr, tz
+            a.top_z = tz
             up = Profile(prof.slice_z(zc, prof.z.max()), 1.0, slide=a.slide)
-            if (a.top_ring or a.cap_trim) and not a.no_cap_trim:
+            if a.cap_trim and not a.no_cap_trim:
                 up.trim_to((a.cap_dia + a.cap_gap) / 2, a.thick / 2)
-            a.hem, a.hem_bottom, a.bottom_ring = hem0, 0.0, 0.0   # base ring is the lower's
+            a.hem, a.hem_bottom = hem0, 0.0
             build(a, up, f'{tag}_upper', extra=[joint(prof, zc, L, a.thick, a.joint_gap, outer=True)],
                   rib_range=(float(np.interp(zc + L, up.z, up.s)), up.S))
-            a.hem, a.hem_bottom, a.bottom_ring = hem0, hem, br
+            a.hem, a.hem_bottom, a.bottom_border = hem0, hem, bb
         print()
 
 if __name__ == '__main__':

@@ -1,5 +1,4 @@
 # HomePod (1st gen) replacement mesh
-## 2nd Gen Coming Soon!
 
 A parametric generator for printable replacement acoustic mesh for the Apple HomePod
 (1st generation). It writes STL and 3MF for a seamless diamond-lattice shell, in either a
@@ -9,16 +8,10 @@ like a sock.
 Everything is driven from caliper measurements of a real pod, so the same script produces a
 part that fits whether the original mesh is still on the speaker or has been stripped off.
 
-To get you started, here are the commands I run to generate two versions; One single-piece tall version that slides over the original mesh...and a two-piece split version that you glue together.
-
-Split;
 ```
-python3 homepod_shell.py --arcs --max-flare 85 --flare-blend 1.5 --pitch 2.4 --rib 0.72 --dmax 141.3 --split 30 --stretch 1 --fit 1.0 --slide --thick 2.0 --hem 0 --hem-bottom 0 --cord 15 --cord-z 30 --variants -o ModelFolder
-```
-
-One Piece;
-```
-python3 homepod_shell.py --arcs --max-flare 75 --flare-blend 1.5 --pitch 2.4 --rib 0.72 --dmax 141.3 --straight-bottom 28 --fit 1.0 --slide --thick 2.0 --hem 0 --hem-bottom 2 --stretch 1 --cord 6 --cord-z 30 --cord-slot --cord-border 2.0 --bottom-border 2 --variants -o ModelFolder
+python3 homepod_shell.py --arcs --max-flare 85 --pitch 2.4 --rib 0.72 --dmax 141.3 \
+  --split 28 --stretch 2 --fit 1.0 --gap 0.4 --slide --thick 2.0 \
+  --hem 0 --hem-bottom 0 --cap-trim --cord 15 --cord-z 28 -o out
 ```
 
 ---
@@ -107,12 +100,9 @@ through it. Python 3.9+.
 python3 homepod_shell.py --arcs --max-flare 85 --flare-blend 1.5 \
   --pitch 2.4 --rib 0.72 --thick 2.0 --dmax 141.3 \
   --split 28 --joint 4 --stretch 2 --fit 1.0 --gap 0.4 --slide \
-  --hem 0 --hem-bottom 0 --top-ring 2 --bottom-ring 2 --cap-trim \
+  --hem 0 --hem-bottom 0 --cap-trim \
   --cord 15 --cord-z 28 -o out
 ```
-
-Add `--bottom-ring-proud 0.4 --bottom-ring-part` for a soft grip foot in a second filament —
-see [the grip foot](#the-grip-foot).
 
 Writes `homepod_p2.4_lower.stl` and `homepod_p2.4_upper.stl`. The halves meet at z = 28 with a
 half-wall rebate, and a 15 mm cord hole straddles the seam so each half carries a semicircle.
@@ -126,7 +116,7 @@ plus 2 × `--gap`).
 python3 homepod_shell.py --arcs --max-flare 85 --flare-blend 1.5 \
   --pitch 2.4 --rib 0.72 --thick 2.0 --dmax 141.3 \
   --stretch 2 --fit 1.0 --gap 0.4 --slide \
-  --hem 0 --hem-bottom 0 --top-ring 0 --cap-trim \
+  --hem 0 --hem-bottom 0 --bottom-border 2 --cap-trim \
   --cord 15 --cord-z 28.5 --cord-slot -o out
 ```
 
@@ -138,7 +128,7 @@ cord that is still plugged in.
 ```
 python3 homepod_shell.py --arcs --pitch 2.4 --rib 0.72 --thick 1.2 \
   --dmax 136.6 --fit 0.95 --max-flare 65 --flare-blend 1.5 \
-  --hem 0 --hem-bottom 4 --hem-thick 2 --top-ring 0 --cap-trim -o out
+  --hem 0 --hem-bottom 4 --hem-thick 2 --cap-trim -o out
 ```
 
 No `--slide`, no `--gap`, no `--split` — it hugs the profile and stretches about 4 % onto the
@@ -228,43 +218,29 @@ opening lands on the plastic cap (88.9 mm by default) regardless of wall thickne
 face is half a wall in *along the surface normal*, which near the cap is nowhere near radial —
 hence the trim solves for that rather than for a radius.
 
-`--top-ring W` adds a solid rim of width W at the opening; `--top-ring 0 --cap-trim` leaves a
-bare lattice edge with the same bore. `--bottom-ring` is its mirror at the base.
+There is no solid rim at either opening. If you want one, add it in the slicer as a modifier
+object: it is a flat washer, it is trivial to place there, and it keeps the generator out of
+the business of guessing how it should meet the lattice.
 
-Both default to `outer` alignment: the rim sits in the **outer** part of the wall, so the
-outside stays flush with the mesh surface and the ribs run on underneath it — from inside you
-see the lattice supporting the rim rather than a plain band. `--top-ring-thick` and
-`--bottom-ring-thick` set how far into the wall each rim reaches; with the default 1 mm against
-a 2 mm wall, the rim is the outer half and the lattice is the inner half.
+### The bottom border
 
-`--top-ring 2 --bottom-ring 2` gives a 2 mm wide, 1 mm deep rim at both openings.
+`--bottom-border 2` makes the first 2 mm of arc at the base solid, at full wall thickness,
+instead of lattice. It is taken **out of** the existing mesh rather than added below it, so the
+overall height and diameter do not change — measured at 0.000 mm on both.
 
-### The grip foot
+The swept rib tubes are capped square to the helix, not to the rim, so their ends hang about
+0.23 mm **below** the band — a ragged fringe under an otherwise solid border, and a first layer
+of ~280 unsupported islands. So the base is also cut flat on the band's own underside. The
+bottom face is then one solid annulus, 875 mm², from the very first layer. `--no-bottom-flat`
+turns that off.
 
-`--bottom-ring-proud 0.4` pushes the bottom rim out past the mesh so it becomes a foot the
-shell stands on. The offset follows the **surface normal**, and at the base of the pod that
-normal is about 95 % vertical — so the rim moves almost straight **down**, not sideways. On a
-0.4 mm setting the part's lowest point drops 0.387 mm and the maximum radius does not change
-at all.
+The flat cut is the one thing that touches overall height: 167.607 mm becomes 167.381 mm, a
+loss of 0.226 mm — 0.14%, and only material that was jagged anyway. Diameter is unchanged.
 
-`--bottom-ring-part` keeps that rim out of the union so it can be given its own filament — a
-soft TPU foot under a rigid PLA shell. It is written two ways:
+The cord slot is cut after all of this, so it goes straight through the border and the shell
+still slides on over a plugged-in cord.
 
-- `homepod_<tag>.3mf` — **use this one.** The shell and the ring are two *parts of a single
-  object*, so Orca loads them together, already aligned, and drops them to the bed as one.
-  Right-click the ring part → assign the second filament.
-- `homepod_<tag>_ring.stl` — the ring on its own, if you would rather build the object up by
-  hand (load the lower half, right-click → *Add part* → the ring STL).
-
-Do not import the two STLs as separate *objects*: the foot sits 0.387 mm below the shell, and
-Orca drops each object to the bed independently, which shifts the foot up by exactly that much.
-
-The two overlap by about 0.8 mm along the normal, which is the bonding zone. Be realistic
-about it: PLA and TPU do not bond well, and that interface is exactly where the foot gets
-loaded when the speaker is dragged across a desk. It is worth a test print before committing.
-
-The foot is only about 1.2 mm tall, so it costs roughly 6 layers' worth of tool changes rather
-than the thousands a full dual-material lattice would need.
+One-piece builds only; the split halves ignore it.
 
 ### The split
 
@@ -336,18 +312,12 @@ only widens. Its top swells over 4 mm to meet the upper piece's widened bore.
 | `--hem` | 4 | solid cuff at the top, mm of arc |
 | `--hem-bottom` | = `--hem` | solid cuff at the bottom |
 | `--hem-thick` | 3.0 | cuff wall thickness |
+| `--bottom-border` | 0 | solid border at the base, mm of arc, full wall thickness (one-piece only) |
+| `--no-bottom-flat` | off | leave the ragged rib ends hanging below the border instead of cutting the base flat |
 | `--hem-thick-top` | = `--hem-thick` | top band wall thickness |
-| `--top-ring` | 0 | width of the solid rim at the cap opening, mm of arc |
-| `--top-ring-thick` | 1.0 | wall of the top rim (how tall it stands) |
-| `--top-ring-align` | outer | which face of the wall the top rim lines up with |
-| `--bottom-ring` | 0 | width of a solid rim at the base, mm of arc (supersedes `--hem-bottom`) |
-| `--bottom-ring-thick` | 1.0 | wall of the bottom rim |
-| `--bottom-ring-align` | outer | which face of the wall the bottom rim lines up with |
-| `--bottom-ring-proud` | 0 | how far the bottom rim stands out past the mesh — a grip foot |
-| `--bottom-ring-part` | off | write the bottom rim as its own STL so it can take a second filament |
 | `--cap-dia` | 88.5 | plastic cap diameter |
 | `--cap-gap` | 0.4 | clearance on the cap |
-| `--cap-trim` | off | trim to the cap bore even with `--top-ring 0` |
+| `--cap-trim` | off | trim the top so the lattice edge ends on the plastic cap |
 | `--no-cap-trim` | off | never trim to the cap |
 | `--top-z Z` | — | cut the shell flat at this height |
 
@@ -423,8 +393,9 @@ It consumes each gap-fill run whole — Orca tags one once and then keeps going 
 and travels without re-tagging — and puts back one travel plus a net E correction so the next
 feature starts with the right pressure. Requires relative E (Orca's default).
 
-By default it leaves the bottom and top 5 mm alone: in the solid rings one of the band's own
-walls is tagged as gap fill, and stripping it makes the ring unprintable. Prints shorter than
+By default it leaves the bottom and top 5 mm alone: in a solid band such as a cuff or
+`--bottom-border`, one of the band's own walls is tagged as gap fill, and stripping it makes
+that band unprintable. Prints shorter than
 `keep_bottom + keep_top + 2` are stripped entirely, so card plates are unaffected.
 
 ---
