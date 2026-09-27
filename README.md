@@ -13,12 +13,12 @@ To get you started, here are the commands I run to generate two versions; One si
 
 Split;
 ```
-python3 homepod_shell.py --arcs --max-flare 85 --flare-blend 1.5 --pitch 2.4 --rib 0.72 --dmax 141.3 --split 30 --stretch 1 --fit 1.0 --gap 0.4 --slide --thick 2.0 --hem 0 --hem-bottom 0 --top-ring 2 --bottom-ring 2 --bottom-ring-proud 0.4 --bottom-ring-part --cap-trim --cord 15 --cord-z 30 --variants -o ModelFolder
+python3 homepod_shell.py --arcs --max-flare 85 --flare-blend 1.5 --pitch 2.4 --rib 0.72 --dmax 141.3 --split 30 --stretch 1 --fit 1.0 --slide --thick 2.0 --hem 0 --hem-bottom 0 --cord 15 --cord-z 30 --variants -o ModelFolder
 ```
 
 One Piece;
 ```
-python3 homepod_shell.py --arcs --max-flare 75 --flare-blend 1.5 --pitch 2.4 --rib 0.72 --dmax 141.3 --straight-bottom 28 --fit 1.0 --gap 0.4 --slide --thick 2.0 --hem 0 --hem-bottom 0 --top-ring 2 --cap-trim --stretch 1 --variants --cord 6 --cord-z 30 --cord-slot --cord-border 2.0 -o ModelFolder
+python3 homepod_shell.py --arcs --max-flare 75 --flare-blend 1.5 --pitch 2.4 --rib 0.72 --dmax 141.3 --straight-bottom 28 --fit 1.0 --slide --thick 2.0 --hem 0 --hem-bottom 2 --stretch 1 --cord 6 --cord-z 30 --cord-slot --cord-border 2.0 --bottom-border 2 --variants -o ModelFolder
 ```
 
 ---
