@@ -1,4 +1,5 @@
 # HomePod (1st gen) replacement mesh
+## 2nd Gen Coming Soon!
 
 A parametric generator for printable replacement acoustic mesh for the Apple HomePod
 (1st generation). It writes STL and 3MF for a seamless diamond-lattice shell, in either a
